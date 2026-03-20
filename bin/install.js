@@ -18,7 +18,7 @@ function findOpenClawWorkspace() {
 }
 
 function verifyOpenClaw(workspacePath) {
-  const configPath = path.join(workspacePath, 'openclaw.json');
+  const configPath = path.join(workspacePath, '..', 'openclaw.json');
   return fs.existsSync(configPath);
 }
 
@@ -55,7 +55,8 @@ function install() {
   console.log(`Found OpenClaw workspace: ${workspace}`);
 
   if (!verifyOpenClaw(workspace)) {
-    console.error(`ERROR: No openclaw.json found in ${workspace}`);
+    const expectedConfig = path.join(workspace, '..', 'openclaw.json');
+    console.error(`ERROR: No openclaw.json found at ${expectedConfig}`);
     console.error('       This does not appear to be a valid OpenClaw installation.');
     process.exit(1);
   }
