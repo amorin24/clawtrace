@@ -26,11 +26,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/wngspan-admin/clawtrace"
+    "url": "https://github.com/amorin24/clawtrace"
   },
   "author": "WNGSPAN",
-  "homepage": "https://github.com/wngspan-admin/clawtrace#readme",
+  "homepage": "https://github.com/amorin24/clawtrace#readme",
   "bugs": {
-    "url": "https://github.com/wngspan-admin/clawtrace/issues"
+    "url": "https://github.com/amorin24/clawtrace/issues"
   }
 }

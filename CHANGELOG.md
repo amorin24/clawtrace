@@ -110,4 +110,4 @@ When upgrading from pre-release versions:
 
 ---
 
-[1.0.0]: https://github.com/wngspan-admin/clawtrace/releases/tag/v1.0.0
+[1.0.0]: https://github.com/amorin24/clawtrace/releases/tag/v1.0.0
