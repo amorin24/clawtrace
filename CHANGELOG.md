@@ -5,6 +5,43 @@ All notable changes to clawtrace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-03-20
+
+### Fixed
+
+**CRITICAL:** Plugin compatibility with OpenClaw 2026.3.13 real API
+- Fixed require paths in `plugin/index.js` from `../lib/` to `./lib/` (installer copies lib inside plugin dir)
+- Fixed Buffer name collision (renamed to TraceBuffer to avoid shadowing Node.js Buffer global)
+- Fixed auth header generation which was silently failing due to Buffer collision
+- Fixed installer printed URL from wngspan to amorin24
+- Added TTL cleanup for pendingTraces Map to prevent memory leak (5 minute TTL)
+- Updated SECURITY.md to reflect basic mode limitations (no tool/skill tracking)
+
+### Changed
+
+- Complete rewrite of `plugin/index.js` for real OpenClaw 2026.3.13 API
+  - Export: `module.exports = function register(api) {}`
+  - Logging: `api.logger.info?.()` / `api.logger.warn?.()` (not `api.log()`)
+  - Hooks: `api.on(event, async (event, ctx) => {})` with 2 parameters
+  - Uses only available hooks: `message_received`, `message_sending`
+  - Removed non-existent hooks: `tool_call`, `skill_invoke`, `agent_delegate`, etc.
+- Added "OpenClaw version compatibility" section to README
+- Updated plugin description to reflect basic mode capabilities
+
+### Limitations (OpenClaw v2026.3.13)
+
+**Available in basic mode:**
+- ✅ Input/output tracing (user messages + agent responses)
+- ✅ Conversation/session tracking
+- ✅ Security monitoring (prompt injection detection)
+- ✅ Offline buffer resilience
+
+**Not available (plugin API limitations):**
+- ❌ Tool call tracing
+- ❌ Skill invocation tracking
+- ❌ Multi-agent delegation chains
+- ❌ Cost tracking (no token counts exposed)
+
 ## [1.0.0] - 2026-03-20
 
 ### Added
@@ -110,4 +147,5 @@ When upgrading from pre-release versions:
 
 ---
 
+[1.0.1]: https://github.com/amorin24/clawtrace/releases/tag/v1.0.1
 [1.0.0]: https://github.com/amorin24/clawtrace/releases/tag/v1.0.0

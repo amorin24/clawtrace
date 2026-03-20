@@ -6,26 +6,28 @@
 
 clawtrace transmits the following data to Langfuse (cloud or self-hosted):
 
-**By default:**
+**By default (OpenClaw v2026.3.13 basic mode):**
 - User input messages (full text)
 - Agent output responses (full text)
-- Tool names and arguments (full JSON payloads)
-- Skill names and versions
-- Model names and token counts
-- Agent metadata (agent IDs, session IDs, user IDs)
-- Timestamps and trace lineage
-- Cost estimates (calculated locally, not from Langfuse)
+- Conversation/session IDs
+- Channel metadata
+- Timestamps and response durations
 
 **When security monitoring is enabled:**
 - Detected injection patterns (pattern names, not full payloads)
-- Destructive tool call flags (tool name, category)
+
+**NOT sent in basic mode (OpenClaw v2026.3.13):**
+- Tool names and arguments (plugin API does not expose)
+- Skill names and versions (plugin API does not expose)
+- Model names and token counts (plugin API does not expose)
+- Cost estimates (requires token counts)
 
 ### What clawtrace does NOT send
 
 - Environment variables
 - Langfuse API keys (only used for authentication headers)
-- File contents (unless included in tool arguments)
-- System paths (unless included in tool arguments or metadata)
+- File contents
+- System paths
 - OpenClaw configuration files
 
 ### Credential handling
@@ -46,14 +48,15 @@ LANGFUSE_CAPTURE_OUTPUT=false
 ```
 
 **What still gets tracked:**
-- Tool calls (tool names and args — review these for sensitive data)
-- Metadata (agent IDs, session IDs)
-- Token counts and cost estimates
-- Trace lineage and timing
+- Conversation/session IDs
+- Channel metadata
+- Response timing/duration
 
 **What no longer gets tracked:**
 - User messages
 - Agent responses
+
+**Note:** In OpenClaw v2026.3.13, tool calls, token counts, and cost tracking are not available regardless of capture settings (plugin API limitation).
 
 ### Truncation limits
 

@@ -1,6 +1,6 @@
-const LangfuseClient = require('../lib/langfuse-client.js');
-const Buffer = require('../lib/buffer.js');
-const SecurityMonitor = require('../lib/security-monitor.js');
+const LangfuseClient = require('./lib/langfuse-client.js');
+const TraceBuffer = require('./lib/buffer.js');
+const SecurityMonitor = require('./lib/security-monitor.js');
 
 function loadConfig() {
   return {
@@ -55,12 +55,27 @@ module.exports = function register(api) {
     return;
   }
 
-  const buffer = new Buffer(config, client);
+  const traceBuffer = new TraceBuffer(config, client);
   const security = new SecurityMonitor(config);
 
-  buffer.start();
+  traceBuffer.start();
 
   const pendingTraces = new Map();
+  const TRACE_TTL_MS = 300000; // 5 minutes
+
+  // Cleanup stale pending traces to prevent memory leak
+  const cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [conversationId, trace] of pendingTraces.entries()) {
+      const traceAge = now - new Date(trace.startTime).getTime();
+      if (traceAge > TRACE_TTL_MS) {
+        pendingTraces.delete(conversationId);
+        logger.warn(`[clawtrace] Cleaned up stale trace for conversation ${conversationId} (age: ${Math.round(traceAge / 1000)}s)`);
+      }
+    }
+  }, 60000); // Check every minute
+
+  cleanupInterval.unref();
 
   api.on('message_received', async (event, ctx) => {
     try {
@@ -161,7 +176,7 @@ module.exports = function register(api) {
 
       if (!result.ok) {
         logger.warn(`[clawtrace] Ingestion failed (${result.error}) — writing to buffer`);
-        await buffer.write(events);
+        await traceBuffer.write(events);
       }
     } catch (err) {
       logger.error(`[clawtrace] Error in message_sending handler: ${err.message}`);
@@ -170,8 +185,9 @@ module.exports = function register(api) {
 
   process.on('SIGTERM', async () => {
     try {
+      clearInterval(cleanupInterval);
       (api.logger?.warn || console.warn)('[clawtrace] Flushing buffer before shutdown...');
-      await buffer.stop();
+      await traceBuffer.stop();
     } catch (err) {
       console.error(`[clawtrace] Error during SIGTERM cleanup: ${err.message}`);
     }
@@ -179,8 +195,9 @@ module.exports = function register(api) {
 
   process.on('SIGINT', async () => {
     try {
+      clearInterval(cleanupInterval);
       (api.logger?.warn || console.warn)('[clawtrace] Flushing buffer before shutdown...');
-      await buffer.stop();
+      await traceBuffer.stop();
       process.exit(0);
     } catch (err) {
       console.error(`[clawtrace] Error during SIGINT cleanup: ${err.message}`);

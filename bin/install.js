@@ -107,7 +107,7 @@ function install() {
     console.log('2. Restart the OpenClaw gateway');
     console.log('3. Agent traces will appear in your Langfuse dashboard\n');
 
-    console.log('For more information: https://github.com/wngspan/clawtrace\n');
+    console.log('For more information: https://github.com/amorin24/clawtrace\n');
     console.log('Installation complete!');
 
   } catch (err) {
