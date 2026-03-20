@@ -15,6 +15,21 @@ Full visibility into your OpenClaw deployment:
 
 All traces appear in your Langfuse dashboard with full lineage, metadata, and cost breakdowns.
 
+## OpenClaw version compatibility
+
+**v2026.3.13 (current):** Basic mode
+- ✅ Input/output tracing (user messages and agent responses)
+- ✅ Conversation/session tracking
+- ✅ Security monitoring (prompt injection detection)
+- ✅ Offline buffer resilience
+- ❌ Tool call tracing (plugin API does not expose tool hooks)
+- ❌ Skill invocation tracking (plugin API does not expose skill hooks)
+- ❌ Multi-agent delegation chains (plugin API does not expose delegation hooks)
+- ❌ Cost tracking (plugin API does not expose token counts)
+
+**Future OpenClaw versions:** Full tracing mode
+- When OpenClaw expands plugin hooks to expose tool calls, skills, delegations, and token data, clawtrace will automatically support full observability without code changes.
+
 ## Quick start
 
 ```bash

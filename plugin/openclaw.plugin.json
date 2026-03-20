@@ -1,8 +1,8 @@
 {
   "id": "clawtrace",
   "name": "Clawtrace",
-  "version": "1.0.0",
-  "description": "Production-grade observability for OpenClaw agents. Traces agent turns, tool calls, skill invocations, multi-agent chains, and security events to Langfuse.",
+  "version": "1.0.1",
+  "description": "Production-grade observability for OpenClaw agents. Traces conversations, security events, and agent interactions to Langfuse.",
   "author": "WNGSPAN",
   "license": "MIT",
   "homepage": "https://github.com/amorin24/clawtrace",

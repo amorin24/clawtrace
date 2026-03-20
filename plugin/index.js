@@ -1,9 +1,6 @@
 const LangfuseClient = require('../lib/langfuse-client.js');
 const Buffer = require('../lib/buffer.js');
-const Tracer = require('../lib/tracer.js');
 const SecurityMonitor = require('../lib/security-monitor.js');
-const AgentLinker = require('../lib/agent-linker.js');
-const CostEstimator = require('../lib/cost-estimator.js');
 
 function loadConfig() {
   return {
@@ -23,21 +20,30 @@ function loadConfig() {
     maxOutputChars: parseInt(process.env.LANGFUSE_MAX_OUTPUT_CHARS || '8000', 10),
 
     securityMonitoring: process.env.LANGFUSE_SECURITY_MONITOR !== 'false',
-    costTracking: process.env.LANGFUSE_COST_TRACKING !== 'false',
-    multiAgentLinking: process.env.LANGFUSE_MULTI_AGENT_LINKING !== 'false',
 
     logLevel: process.env.LANGFUSE_LOG_LEVEL || 'warn'
   };
 }
 
-module.exports = function(api) {
+function truncate(text, maxLength) {
+  if (!text || text.length <= maxLength) {
+    return text;
+  }
+  return text.substring(0, maxLength) + `\n\n[truncated at ${maxLength} chars]`;
+}
+
+function generateId(prefix = 'trace') {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+}
+
+module.exports = function register(api) {
   const config = loadConfig();
 
   const logger = {
-    debug: (msg) => config.logLevel === 'debug' && api.log('debug', msg),
-    info: (msg) => ['debug', 'info'].includes(config.logLevel) && api.log('info', msg),
-    warn: (msg) => ['debug', 'info', 'warn'].includes(config.logLevel) && api.log('warn', msg),
-    error: (msg) => api.log('error', msg)
+    debug: (msg) => config.logLevel === 'debug' && api.logger?.info?.(msg),
+    info: (msg) => ['debug', 'info'].includes(config.logLevel) && api.logger?.info?.(msg),
+    warn: (msg) => ['debug', 'info', 'warn'].includes(config.logLevel) && api.logger?.warn?.(msg),
+    error: (msg) => api.logger?.warn?.(msg) || console.error(msg)
   };
 
   config.logger = logger;
@@ -45,58 +51,143 @@ module.exports = function(api) {
   const client = new LangfuseClient(config);
 
   if (!client.isConfigured()) {
-    api.log('warn', '[clawtrace] LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY not set — tracing disabled');
+    api.logger?.warn?.('[clawtrace] LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY not set — tracing disabled');
     return;
   }
 
   const buffer = new Buffer(config, client);
-  const tracer = new Tracer(config, client, buffer);
   const security = new SecurityMonitor(config);
-  const linker = new AgentLinker(config);
-  const cost = new CostEstimator();
 
   buffer.start();
 
-  api.on('before_agent_start', (ctx) => {
-    tracer.onTurnStart(ctx, security, linker);
+  const pendingTraces = new Map();
+
+  api.on('message_received', async (event, ctx) => {
+    try {
+      const traceId = generateId('trace');
+      const timestamp = new Date().toISOString();
+      const conversationId = ctx.conversationId || 'default';
+
+      const trace = {
+        traceId,
+        conversationId,
+        channelId: ctx.channelId,
+        startTime: timestamp,
+        input: config.captureInput ? event.content : null,
+        metadata: event.metadata || {},
+        spans: []
+      };
+
+      if (config.securityMonitoring && security && event.content) {
+        const detection = security.scanInput(event.content);
+        if (detection.detected) {
+          const securitySpan = security.buildSecuritySpan(detection);
+          if (securitySpan) {
+            securitySpan.body.traceId = traceId;
+            trace.spans.push(securitySpan);
+            trace.securityDetection = {
+              severity: detection.severity,
+              patterns: detection.patterns.map(p => p.name)
+            };
+          }
+        }
+      }
+
+      pendingTraces.set(conversationId, trace);
+    } catch (err) {
+      logger.error(`[clawtrace] Error in message_received handler: ${err.message}`);
+    }
   });
 
-  api.on('tool_call', (ctx) => {
-    tracer.onToolCall(ctx, security);
-  });
+  api.on('message_sending', async (event, ctx) => {
+    try {
+      const conversationId = ctx.conversationId || 'default';
+      const pending = pendingTraces.get(conversationId);
 
-  api.on('tool_result', (ctx) => {
-    tracer.onToolResult(ctx);
-  });
+      if (!pending) {
+        return;
+      }
 
-  api.on('skill_invoke', (ctx) => {
-    tracer.onSkillInvoke(ctx);
-  });
+      pendingTraces.delete(conversationId);
 
-  api.on('agent_delegate', (ctx) => {
-    tracer.onDelegate(ctx, linker);
-  });
+      const endTime = new Date().toISOString();
+      const startTimeMs = new Date(pending.startTime).getTime();
+      const endTimeMs = new Date(endTime).getTime();
+      const durationMs = endTimeMs - startTimeMs;
 
-  api.on('agent_delegate_result', (ctx) => {
-    tracer.onDelegateResult(ctx, linker);
-  });
+      const generationId = generateId('generation');
+      const generation = {
+        id: generationId,
+        type: 'generation-create',
+        body: {
+          id: generationId,
+          traceId: pending.traceId,
+          name: 'agent-response',
+          startTime: pending.startTime,
+          endTime: endTime,
+          input: config.captureInput ? truncate(pending.input, config.maxInputChars) : null,
+          output: config.captureOutput ? truncate(event.content, config.maxOutputChars) : null,
+          metadata: {
+            conversationId: pending.conversationId,
+            channelId: pending.channelId,
+            durationMs,
+            securityDetection: pending.securityDetection || null
+          },
+          level: 'DEFAULT'
+        }
+      };
 
-  api.on('agent_end', async (ctx) => {
-    await tracer.onTurnEnd(ctx, cost, linker);
+      const traceEvent = {
+        id: pending.traceId,
+        type: 'trace-create',
+        body: {
+          id: pending.traceId,
+          name: `conversation:${pending.conversationId}`,
+          timestamp: pending.startTime,
+          metadata: {
+            conversationId: pending.conversationId,
+            channelId: pending.channelId,
+            durationMs,
+            ...pending.metadata
+          },
+          sessionId: pending.conversationId,
+          tags: ['openclaw', 'v2026.3.13', 'basic-mode']
+        }
+      };
+
+      const events = [traceEvent, ...pending.spans, generation];
+
+      const result = await client.ingest(events);
+
+      if (!result.ok) {
+        logger.warn(`[clawtrace] Ingestion failed (${result.error}) — writing to buffer`);
+        await buffer.write(events);
+      }
+    } catch (err) {
+      logger.error(`[clawtrace] Error in message_sending handler: ${err.message}`);
+    }
   });
 
   process.on('SIGTERM', async () => {
-    api.log('info', '[clawtrace] Flushing buffer before shutdown...');
-    await buffer.stop();
-    linker.stop();
+    try {
+      (api.logger?.warn || console.warn)('[clawtrace] Flushing buffer before shutdown...');
+      await buffer.stop();
+    } catch (err) {
+      console.error(`[clawtrace] Error during SIGTERM cleanup: ${err.message}`);
+    }
   });
 
   process.on('SIGINT', async () => {
-    api.log('info', '[clawtrace] Flushing buffer before shutdown...');
-    await buffer.stop();
-    linker.stop();
-    process.exit(0);
+    try {
+      (api.logger?.warn || console.warn)('[clawtrace] Flushing buffer before shutdown...');
+      await buffer.stop();
+      process.exit(0);
+    } catch (err) {
+      console.error(`[clawtrace] Error during SIGINT cleanup: ${err.message}`);
+      process.exit(1);
+    }
   });
 
-  api.log('info', `[clawtrace] Langfuse tracing enabled → ${config.baseUrl}`);
+  api.logger?.info?.(`[clawtrace] Langfuse tracing enabled → ${config.baseUrl}`);
+  api.logger?.warn?.('[clawtrace] Running in basic mode — input/output tracing only. Tool call and skill tracing requires future OpenClaw plugin API expansion.');
 };
