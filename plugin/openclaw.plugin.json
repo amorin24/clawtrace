@@ -5,7 +5,7 @@
   "description": "Production-grade observability for OpenClaw agents. Traces agent turns, tool calls, skill invocations, multi-agent chains, and security events to Langfuse.",
   "author": "WNGSPAN",
   "license": "MIT",
-  "homepage": "https://github.com/wngspan/clawtrace",
+  "homepage": "https://github.com/wngspan-admin/clawtrace",
   "configSchema": {
     "type": "object",
     "properties": {}

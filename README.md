@@ -283,8 +283,8 @@ MIT — see [LICENSE](LICENSE)
 
 ## Support
 
-- Issues: https://github.com/wngspan/clawtrace/issues
-- Docs: https://github.com/wngspan/clawtrace
+- Issues: https://github.com/wngspan-admin/clawtrace/issues
+- Docs: https://github.com/wngspan-admin/clawtrace
 - OpenClaw: https://openclaw.dev
 - Langfuse: https://langfuse.com
 
