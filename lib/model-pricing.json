@@ -1,0 +1,43 @@
+{
+  "version": "2026-03",
+  "note": "Prices in USD per million tokens. Update monthly.",
+  "models": {
+    "anthropic/claude-sonnet-4-6": {
+      "input": 3.00,
+      "output": 15.00
+    },
+    "anthropic/claude-opus-4-6": {
+      "input": 15.00,
+      "output": 75.00
+    },
+    "anthropic/claude-haiku-4-5": {
+      "input": 0.80,
+      "output": 4.00
+    },
+    "google/gemini-flash-1.5": {
+      "input": 0.075,
+      "output": 0.30
+    },
+    "google/gemini-pro-1.5": {
+      "input": 1.25,
+      "output": 5.00
+    },
+    "openai/gpt-4o": {
+      "input": 2.50,
+      "output": 10.00
+    },
+    "openai/gpt-4o-mini": {
+      "input": 0.15,
+      "output": 0.60
+    },
+    "meta-llama/llama-3.1-8b-instruct": {
+      "input": 0.05,
+      "output": 0.05
+    },
+    "openrouter/auto": {
+      "input": null,
+      "output": null,
+      "note": "Variable — depends on routed model"
+    }
+  }
+}

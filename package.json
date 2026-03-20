@@ -1,0 +1,36 @@
+{
+  "name": "clawtrace",
+  "version": "1.0.0",
+  "description": "Production-grade Langfuse observability for OpenClaw agents",
+  "main": "plugin/index.js",
+  "bin": {
+    "clawtrace": "bin/install.js"
+  },
+  "scripts": {
+    "test": "node --test test/**/*.test.js",
+    "lint": "node --check lib/*.js plugin/*.js bin/*.js"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [
+    "openclaw",
+    "langfuse",
+    "observability",
+    "tracing",
+    "ai-agents",
+    "llm-ops"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wngspan/clawtrace"
+  },
+  "author": "WNGSPAN",
+  "homepage": "https://github.com/wngspan/clawtrace#readme",
+  "bugs": {
+    "url": "https://github.com/wngspan/clawtrace/issues"
+  }
+}
