@@ -5,6 +5,33 @@ All notable changes to clawtrace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-03-21
+
+### Fixed
+
+**CRITICAL:** Telegram channel compatibility
+- Replaced `message_sending` hook with `agent_end` (message_sending never fires on Telegram)
+- Changed pendingTraces Map key from `conversationId` to `channelId`
+  - `agent_end` hook has `convId=undefined`, cannot correlate by conversationId
+  - Single-agent setup has one active conversation per channel, so channelId correlation works
+- Updated TTL cleanup to use channelId as key
+
+### Added
+
+- Added `before_agent_start` hook listener with debug logging
+  - Logs event and context to discover available fields for future use
+- Added `agent_end` hook listener with comprehensive debug logging
+  - Logs all available fields (output, model, tokens, etc.)
+  - Attempts to extract output from event.output/content/response/message
+  - Captures model and usage/tokens metadata if available
+- Changed trace tags from `'basic-mode'` to `'telegram'` for channel-specific tracking
+
+### Technical
+
+- Debug logs truncated to 500 chars to avoid log spam
+- All debug logs wrapped in try/catch to handle circular references
+- Graceful fallback if output field name doesn't match expectations
+
 ## [1.0.1] - 2026-03-20
 
 ### Fixed
@@ -147,5 +174,6 @@ When upgrading from pre-release versions:
 
 ---
 
+[1.0.2]: https://github.com/amorin24/clawtrace/releases/tag/v1.0.2
 [1.0.1]: https://github.com/amorin24/clawtrace/releases/tag/v1.0.1
 [1.0.0]: https://github.com/amorin24/clawtrace/releases/tag/v1.0.0

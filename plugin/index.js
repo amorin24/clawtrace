@@ -66,11 +66,11 @@ module.exports = function register(api) {
   // Cleanup stale pending traces to prevent memory leak
   const cleanupInterval = setInterval(() => {
     const now = Date.now();
-    for (const [conversationId, trace] of pendingTraces.entries()) {
+    for (const [channelId, trace] of pendingTraces.entries()) {
       const traceAge = now - new Date(trace.startTime).getTime();
       if (traceAge > TRACE_TTL_MS) {
-        pendingTraces.delete(conversationId);
-        logger.warn(`[clawtrace] Cleaned up stale trace for conversation ${conversationId} (age: ${Math.round(traceAge / 1000)}s)`);
+        pendingTraces.delete(channelId);
+        logger.warn(`[clawtrace] Cleaned up stale trace for channel ${channelId} (age: ${Math.round(traceAge / 1000)}s)`);
       }
     }
   }, 60000); // Check every minute
@@ -82,11 +82,12 @@ module.exports = function register(api) {
       const traceId = generateId('trace');
       const timestamp = new Date().toISOString();
       const conversationId = ctx.conversationId || 'default';
+      const channelId = ctx.channelId || 'default';
 
       const trace = {
         traceId,
         conversationId,
-        channelId: ctx.channelId,
+        channelId,
         startTime: timestamp,
         input: config.captureInput ? event.content : null,
         metadata: event.metadata || {},
@@ -108,27 +109,53 @@ module.exports = function register(api) {
         }
       }
 
-      pendingTraces.set(conversationId, trace);
+      // Key by channelId because agent_end doesn't have conversationId
+      pendingTraces.set(channelId, trace);
     } catch (err) {
       logger.error(`[clawtrace] Error in message_received handler: ${err.message}`);
     }
   });
 
-  api.on('message_sending', async (event, ctx) => {
+  // Hook to inspect before_agent_start context (for debugging/future use)
+  api.on('before_agent_start', async (event, ctx) => {
     try {
-      const conversationId = ctx.conversationId || 'default';
-      const pending = pendingTraces.get(conversationId);
+      // Debug log to see what fields are available
+      const eventSample = JSON.stringify(event, null, 2).substring(0, 500);
+      const ctxSample = JSON.stringify(ctx, null, 2).substring(0, 500);
+      logger.info(`[clawtrace] before_agent_start event=${eventSample} ctx=${ctxSample}`);
+    } catch (err) {
+      logger.warn(`[clawtrace] Error logging before_agent_start: ${err.message}`);
+    }
+  });
+
+  api.on('agent_end', async (event, ctx) => {
+    try {
+      // Debug log to see all available fields in agent_end
+      try {
+        const eventSample = JSON.stringify(event, null, 2).substring(0, 500);
+        const ctxSample = JSON.stringify(ctx, null, 2).substring(0, 500);
+        logger.info(`[clawtrace] agent_end event=${eventSample} ctx=${ctxSample}`);
+      } catch (jsonErr) {
+        logger.warn(`[clawtrace] Could not stringify agent_end context: ${jsonErr.message}`);
+      }
+
+      const channelId = ctx.channelId || 'default';
+      const pending = pendingTraces.get(channelId);
 
       if (!pending) {
+        logger.warn(`[clawtrace] No pending trace found for channel ${channelId}`);
         return;
       }
 
-      pendingTraces.delete(conversationId);
+      pendingTraces.delete(channelId);
 
       const endTime = new Date().toISOString();
       const startTimeMs = new Date(pending.startTime).getTime();
       const endTimeMs = new Date(endTime).getTime();
       const durationMs = endTimeMs - startTimeMs;
+
+      // Extract output from event (need to discover correct field name)
+      const output = event.output || event.content || event.response || event.message || null;
 
       const generationId = generateId('generation');
       const generation = {
@@ -141,12 +168,15 @@ module.exports = function register(api) {
           startTime: pending.startTime,
           endTime: endTime,
           input: config.captureInput ? truncate(pending.input, config.maxInputChars) : null,
-          output: config.captureOutput ? truncate(event.content, config.maxOutputChars) : null,
+          output: config.captureOutput ? truncate(output, config.maxOutputChars) : null,
           metadata: {
             conversationId: pending.conversationId,
             channelId: pending.channelId,
             durationMs,
-            securityDetection: pending.securityDetection || null
+            securityDetection: pending.securityDetection || null,
+            // Include any additional fields from agent_end event
+            model: event.model || null,
+            usage: event.usage || event.tokens || null
           },
           level: 'DEFAULT'
         }
@@ -166,7 +196,7 @@ module.exports = function register(api) {
             ...pending.metadata
           },
           sessionId: pending.conversationId,
-          tags: ['openclaw', 'v2026.3.13', 'basic-mode']
+          tags: ['openclaw', 'v2026.3.13', 'telegram']
         }
       };
 
@@ -179,7 +209,7 @@ module.exports = function register(api) {
         await traceBuffer.write(events);
       }
     } catch (err) {
-      logger.error(`[clawtrace] Error in message_sending handler: ${err.message}`);
+      logger.error(`[clawtrace] Error in agent_end handler: ${err.message}`);
     }
   });
 

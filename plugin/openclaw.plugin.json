@@ -1,7 +1,7 @@
 {
   "id": "clawtrace",
   "name": "Clawtrace",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Production-grade observability for OpenClaw agents. Traces conversations, security events, and agent interactions to Langfuse.",
   "author": "WNGSPAN",
   "license": "MIT",
