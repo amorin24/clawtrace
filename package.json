@@ -7,8 +7,8 @@
     "clawtrace": "bin/install.js"
   },
   "scripts": {
-    "test": "node --test test/**/*.test.js",
-    "lint": "node --check lib/*.js plugin/*.js bin/*.js"
+    "test": "node --test test/all.test.js",
+    "lint": "node test/check-syntax.js"
   },
   "dependencies": {},
   "devDependencies": {},

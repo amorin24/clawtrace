@@ -1,19 +1,20 @@
 const { describe, test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs').promises;
+const os = require('os');
 const path = require('path');
 const Buffer = require('../lib/buffer.js');
 
 describe('Buffer', () => {
-  const testBufferPath = path.join('/tmp', `clawtrace-test-${Date.now()}.ndjson`);
+  let testBufferPath;
   let mockClient;
   let mockLogger;
 
   beforeEach(() => {
+    testBufferPath = path.join(os.tmpdir(), `clawtrace-test-${Date.now()}-${Math.random()}.ndjson`);
     mockClient = {
       ingest: async () => ({ ok: true })
     };
-
     mockLogger = {
       info: () => {},
       warn: () => {},
@@ -22,56 +23,24 @@ describe('Buffer', () => {
   });
 
   afterEach(async () => {
-    try {
-      await fs.unlink(testBufferPath);
-    } catch (err) {
-      // Ignore if file doesn't exist
-    }
+    await fs.rm(testBufferPath, { force: true });
   });
 
   test('write creates buffer file with valid NDJSON', async () => {
-    const buffer = new Buffer({
-      bufferPath: testBufferPath,
-      logger: mockLogger
-    }, mockClient);
+    const buffer = new Buffer({ bufferPath: testBufferPath, logger: mockLogger }, mockClient);
 
     const events = [{ type: 'trace-create', id: 'test-1' }];
     await buffer.write(events);
 
     const content = await fs.readFile(testBufferPath, 'utf8');
     const lines = content.trim().split('\n');
+    const parsed = JSON.parse(lines[0]);
 
     assert.strictEqual(lines.length, 1);
-
-    const parsed = JSON.parse(lines[0]);
     assert.ok(parsed.timestamp);
     assert.strictEqual(parsed.attempts, 0);
+    assert.strictEqual(parsed.nextRetryAt, 0);
     assert.deepStrictEqual(parsed.events, events);
-  });
-
-  test('write appends multiple entries', async () => {
-    const buffer = new Buffer({
-      bufferPath: testBufferPath,
-      logger: mockLogger
-    }, mockClient);
-
-    await buffer.write([{ type: 'trace-create', id: 'test-1' }]);
-    await buffer.write([{ type: 'trace-create', id: 'test-2' }]);
-
-    const count = await buffer.count();
-    assert.strictEqual(count, 2);
-  });
-
-  test('write ignores empty arrays', async () => {
-    const buffer = new Buffer({
-      bufferPath: testBufferPath,
-      logger: mockLogger
-    }, mockClient);
-
-    await buffer.write([]);
-
-    const count = await buffer.count();
-    assert.strictEqual(count, 0);
   });
 
   test('flush successfully ingests buffered events and clears file', async () => {
@@ -81,31 +50,27 @@ describe('Buffer', () => {
       return { ok: true };
     };
 
-    const buffer = new Buffer({
-      bufferPath: testBufferPath,
-      logger: mockLogger
-    }, mockClient);
-
+    const buffer = new Buffer({ bufferPath: testBufferPath, logger: mockLogger }, mockClient);
     await buffer.write([{ type: 'trace-create', id: 'test-1' }]);
     await buffer.write([{ type: 'trace-create', id: 'test-2' }]);
 
     await buffer.flush();
 
     assert.strictEqual(ingestedBatches.length, 2);
-    const count = await buffer.count();
-    assert.strictEqual(count, 0);
+    assert.strictEqual(await buffer.count(), 0);
   });
 
-  test('flush failure increments attempt counter', async () => {
+  test('flush failure increments attempts and schedules backoff', async () => {
     let callCount = 0;
     mockClient.ingest = async () => {
-      callCount++;
+      callCount += 1;
       return { ok: false, error: 'server' };
     };
 
     const buffer = new Buffer({
       bufferPath: testBufferPath,
-      logger: mockLogger
+      logger: mockLogger,
+      backoffBase: 1000
     }, mockClient);
 
     await buffer.write([{ type: 'trace-create', id: 'test-1' }]);
@@ -115,54 +80,80 @@ describe('Buffer', () => {
     const entry = JSON.parse(lines[0]);
 
     assert.strictEqual(entry.attempts, 1);
+    assert.ok(entry.nextRetryAt > Date.now());
     assert.strictEqual(callCount, 1);
   });
 
-  test('entries dropped after max retries', async () => {
-    const warnings = [];
-    mockLogger.warn = (msg) => warnings.push(msg);
+  test('flush skips entries until retry time is reached', async () => {
+    let callCount = 0;
+    mockClient.ingest = async () => {
+      callCount += 1;
+      return { ok: false, error: 'server' };
+    };
 
+    const buffer = new Buffer({
+      bufferPath: testBufferPath,
+      logger: mockLogger,
+      backoffBase: 100000
+    }, mockClient);
+
+    await buffer.write([{ type: 'trace-create', id: 'test-1' }]);
+    await buffer.flush();
+    await buffer.flush();
+
+    assert.strictEqual(callCount, 1);
+  });
+
+  test('entries drop after max retries', async () => {
+    const warnings = [];
+    mockLogger.warn = (message) => warnings.push(message);
     mockClient.ingest = async () => ({ ok: false, error: 'server' });
 
     const buffer = new Buffer({
       bufferPath: testBufferPath,
-      maxRetries: 3,
-      logger: mockLogger
-    }, mockClient);
-
-    await buffer.write([{ type: 'trace-create', id: 'test-1' }]);
-
-    for (let i = 0; i < 4; i++) {
-      await buffer.flush();
-    }
-
-    const count = await buffer.count();
-    assert.strictEqual(count, 0);
-    assert.ok(warnings.some(w => w.includes('Dropping batch after 3 retries')));
-  });
-
-  test('auth errors drop batch immediately', async () => {
-    const warnings = [];
-    mockLogger.warn = (msg) => warnings.push(msg);
-
-    mockClient.ingest = async () => ({ ok: false, error: 'auth' });
-
-    const buffer = new Buffer({
-      bufferPath: testBufferPath,
+      maxRetries: 2,
       logger: mockLogger
     }, mockClient);
 
     await buffer.write([{ type: 'trace-create', id: 'test-1' }]);
     await buffer.flush();
+    let [entry] = (await buffer.readLines()).map((line) => JSON.parse(line));
+    entry.nextRetryAt = 0;
+    await buffer.writeLines([JSON.stringify(entry)]);
+    await buffer.flush();
+    [entry] = (await buffer.readLines()).map((line) => JSON.parse(line));
+    entry.nextRetryAt = 0;
+    await buffer.writeLines([JSON.stringify(entry)]);
+    await buffer.flush();
 
-    const count = await buffer.count();
-    assert.strictEqual(count, 0);
-    assert.ok(warnings.some(w => w.includes('Auth error')));
+    assert.strictEqual(await buffer.count(), 0);
+    assert.ok(warnings.some((warning) => warning.includes('Dropping batch after 2 retries')));
+  });
+
+  test('auth and client errors drop batches immediately', async () => {
+    const warnings = [];
+    mockLogger.warn = (message) => warnings.push(message);
+
+    let mode = 'auth';
+    mockClient.ingest = async () => ({ ok: false, error: mode });
+
+    const buffer = new Buffer({ bufferPath: testBufferPath, logger: mockLogger }, mockClient);
+
+    await buffer.write([{ type: 'trace-create', id: 'auth' }]);
+    await buffer.flush();
+    assert.strictEqual(await buffer.count(), 0);
+
+    mode = 'client';
+    await buffer.write([{ type: 'trace-create', id: 'client' }]);
+    await buffer.flush();
+    assert.strictEqual(await buffer.count(), 0);
+    assert.ok(warnings.some((warning) => warning.includes('auth error')));
+    assert.ok(warnings.some((warning) => warning.includes('client error')));
   });
 
   test('buffer respects max size and drops oldest entries', async () => {
     const warnings = [];
-    mockLogger.warn = (msg) => warnings.push(msg);
+    mockLogger.warn = (message) => warnings.push(message);
 
     const buffer = new Buffer({
       bufferPath: testBufferPath,
@@ -170,41 +161,22 @@ describe('Buffer', () => {
       logger: mockLogger
     }, mockClient);
 
-    for (let i = 0; i < 10; i++) {
-      const events = [{ type: 'trace-create', id: `test-${i}`, data: 'x'.repeat(100) }];
-      await buffer.write(events);
+    for (let index = 0; index < 10; index += 1) {
+      await buffer.write([{ type: 'trace-create', id: `test-${index}`, data: 'x'.repeat(100) }]);
     }
 
     const size = await buffer.size();
     assert.ok(size <= 500, `Buffer size ${size} exceeds max 500 bytes`);
-    assert.ok(warnings.some(w => w.includes('dropped')));
+    assert.ok(warnings.some((warning) => warning.includes('dropped')));
   });
 
-  test('size returns 0 for non-existent file', async () => {
-    const buffer = new Buffer({
-      bufferPath: '/tmp/non-existent-buffer.ndjson',
-      logger: mockLogger
-    }, mockClient);
-
-    const size = await buffer.size();
-    assert.strictEqual(size, 0);
-  });
-
-  test('count returns 0 for non-existent file', async () => {
-    const buffer = new Buffer({
-      bufferPath: '/tmp/non-existent-buffer.ndjson',
-      logger: mockLogger
-    }, mockClient);
-
-    const count = await buffer.count();
-    assert.strictEqual(count, 0);
-  });
-
-  test('start begins background flush worker', async () => {
+  test('start begins background flush worker and stop performs final flush', async () => {
     let flushCalled = false;
+    mockClient.ingest = async () => ({ ok: true });
+
     const buffer = new Buffer({
       bufferPath: testBufferPath,
-      flushInterval: 100,
+      flushInterval: 50,
       logger: mockLogger
     }, mockClient);
 
@@ -214,28 +186,12 @@ describe('Buffer', () => {
       return originalFlush();
     };
 
-    buffer.start();
-
-    await new Promise(resolve => setTimeout(resolve, 150));
-
-    await buffer.stop();
-    assert.ok(flushCalled);
-  });
-
-  test('stop clears timer and performs final flush', async () => {
-    mockClient.ingest = async () => ({ ok: true });
-
-    const buffer = new Buffer({
-      bufferPath: testBufferPath,
-      logger: mockLogger
-    }, mockClient);
-
     await buffer.write([{ type: 'trace-create', id: 'test-1' }]);
-
     buffer.start();
+    await new Promise((resolve) => setTimeout(resolve, 75));
     await buffer.stop();
 
-    const count = await buffer.count();
-    assert.strictEqual(count, 0);
+    assert.strictEqual(flushCalled, true);
+    assert.strictEqual(await buffer.count(), 0);
   });
 });

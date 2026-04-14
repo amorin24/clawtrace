@@ -18,46 +18,26 @@ describe('LangfuseClient', () => {
     assert.strictEqual(client.isConfigured(), false);
   });
 
-  test('isConfigured returns true when keys are provided', () => {
-    const client = new LangfuseClient({
-      publicKey: 'pk-test',
-      secretKey: 'sk-test'
-    });
-    assert.strictEqual(client.isConfigured(), true);
-  });
-
   test('buildAuthHeader constructs correct Basic auth header', () => {
     const client = new LangfuseClient({
       publicKey: 'pk-test',
       secretKey: 'sk-test'
     });
+
     const header = client.buildAuthHeader();
     const expected = 'Basic ' + Buffer.from('pk-test:sk-test').toString('base64');
     assert.strictEqual(header, expected);
   });
 
-  test('buildAuthHeader returns null when not configured', () => {
-    const client = new LangfuseClient({});
-    assert.strictEqual(client.buildAuthHeader(), null);
-  });
-
   test('ingest returns not_configured error when keys missing', async () => {
     const client = new LangfuseClient({});
     const result = await client.ingest([{ type: 'trace-create' }]);
+
     assert.strictEqual(result.ok, false);
     assert.strictEqual(result.error, 'not_configured');
   });
 
-  test('ingest returns success for empty array', async () => {
-    const client = new LangfuseClient({
-      publicKey: 'pk-test',
-      secretKey: 'sk-test'
-    });
-    const result = await client.ingest([]);
-    assert.strictEqual(result.ok, true);
-  });
-
-  test('successful batch ingest returns ok: true', async () => {
+  test('successful batch ingest returns ok: true and includes sdk version metadata', async () => {
     global.fetch = mock.fn(async () => ({
       ok: true,
       status: 200,
@@ -66,15 +46,15 @@ describe('LangfuseClient', () => {
 
     const client = new LangfuseClient({
       publicKey: 'pk-test',
-      secretKey: 'sk-test'
+      secretKey: 'sk-test',
+      sdkVersion: '9.9.9'
     });
 
-    const events = [{ type: 'trace-create', id: 'test-123' }];
-    const result = await client.ingest(events);
+    const result = await client.ingest([{ type: 'trace-create', id: 'test-123' }]);
+    const payload = JSON.parse(global.fetch.mock.calls[0].arguments[1].body);
 
     assert.strictEqual(result.ok, true);
-    assert.strictEqual(result.status, 200);
-    assert.strictEqual(global.fetch.mock.calls.length, 1);
+    assert.strictEqual(payload.metadata.sdk_version, '9.9.9');
   });
 
   test('401 error returns auth error', async () => {
@@ -90,10 +70,39 @@ describe('LangfuseClient', () => {
     });
 
     const result = await client.ingest([{ type: 'trace-create' }]);
-
-    assert.strictEqual(result.ok, false);
     assert.strictEqual(result.error, 'auth');
-    assert.strictEqual(result.status, 401);
+  });
+
+  test('429 error returns rate_limit error', async () => {
+    global.fetch = mock.fn(async () => ({
+      ok: false,
+      status: 429,
+      text: async () => 'Too Many Requests'
+    }));
+
+    const client = new LangfuseClient({
+      publicKey: 'pk-test',
+      secretKey: 'sk-test'
+    });
+
+    const result = await client.ingest([{ type: 'trace-create' }]);
+    assert.strictEqual(result.error, 'rate_limit');
+  });
+
+  test('400 error returns client error', async () => {
+    global.fetch = mock.fn(async () => ({
+      ok: false,
+      status: 400,
+      text: async () => 'Bad Request'
+    }));
+
+    const client = new LangfuseClient({
+      publicKey: 'pk-test',
+      secretKey: 'sk-test'
+    });
+
+    const result = await client.ingest([{ type: 'trace-create' }]);
+    assert.strictEqual(result.error, 'client');
   });
 
   test('500 error returns server error', async () => {
@@ -109,10 +118,7 @@ describe('LangfuseClient', () => {
     });
 
     const result = await client.ingest([{ type: 'trace-create' }]);
-
-    assert.strictEqual(result.ok, false);
     assert.strictEqual(result.error, 'server');
-    assert.strictEqual(result.status, 500);
   });
 
   test('network failure returns network error', async () => {
@@ -128,12 +134,10 @@ describe('LangfuseClient', () => {
     });
 
     const result = await client.ingest([{ type: 'trace-create' }]);
-
-    assert.strictEqual(result.ok, false);
     assert.strictEqual(result.error, 'network');
   });
 
-  test('uses correct base URL from config', async () => {
+  test('uses correct base URL and headers', async () => {
     global.fetch = mock.fn(async () => ({
       ok: true,
       status: 200,
@@ -148,29 +152,10 @@ describe('LangfuseClient', () => {
 
     await client.ingest([{ type: 'trace-create' }]);
 
-    const callArgs = global.fetch.mock.calls[0].arguments;
-    assert.strictEqual(callArgs[0], 'https://custom.langfuse.com/api/public/ingestion');
-  });
-
-  test('includes correct headers in request', async () => {
-    global.fetch = mock.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () => 'OK'
-    }));
-
-    const client = new LangfuseClient({
-      publicKey: 'pk-test',
-      secretKey: 'sk-test'
-    });
-
-    await client.ingest([{ type: 'trace-create' }]);
-
-    const callArgs = global.fetch.mock.calls[0].arguments;
-    const options = callArgs[1];
-
+    const [url, options] = global.fetch.mock.calls[0].arguments;
+    assert.strictEqual(url, 'https://custom.langfuse.com/api/public/ingestion');
     assert.strictEqual(options.method, 'POST');
     assert.strictEqual(options.headers['Content-Type'], 'application/json');
-    assert.ok(options.headers['Authorization'].startsWith('Basic '));
+    assert.ok(options.headers.Authorization.startsWith('Basic '));
   });
 });

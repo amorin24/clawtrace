@@ -43,6 +43,21 @@ describe('Tracer', () => {
     assert.strictEqual(turn.input, 'Hello, world!');
   });
 
+  test('onTurnStart merges caller metadata', () => {
+    const client = createMockClient();
+    const buffer = createMockBuffer();
+    const tracer = new Tracer({ logger: mockLogger }, client, buffer);
+
+    tracer.onTurnStart({
+      agentId: 'test-agent',
+      input: 'Hello, world!',
+      metadata: { channelId: 'channel-1' }
+    }, null, null);
+
+    const turn = tracer.activeTurns.get('test-agent');
+    assert.strictEqual(turn.metadata.channelId, 'channel-1');
+  });
+
   test('onTurnStart runs security monitor if enabled', () => {
     const client = createMockClient();
     const buffer = createMockBuffer();
@@ -243,6 +258,27 @@ describe('Tracer', () => {
     assert.ok(createMockBuffer.lastWritten.length > 0);
   });
 
+  test('onTurnEnd does not buffer non-retryable failures', async () => {
+    createMockBuffer.lastWritten = null;
+    const client = {
+      ingest: async () => ({ ok: false, error: 'client' })
+    };
+    const buffer = createMockBuffer();
+    const tracer = new Tracer({ logger: mockLogger }, client, buffer);
+
+    tracer.onTurnStart({ agentId: 'test-agent', input: 'test' }, null, null);
+
+    await tracer.onTurnEnd({
+      agentId: 'test-agent',
+      output: 'response',
+      model: 'test-model',
+      inputTokens: 100,
+      outputTokens: 50
+    }, null, null);
+
+    assert.strictEqual(createMockBuffer.lastWritten, null);
+  });
+
   test('truncate applies max length and adds marker', () => {
     const client = createMockClient();
     const buffer = createMockBuffer();
@@ -330,6 +366,32 @@ describe('Tracer', () => {
     linker.stop();
   });
 
+  test('cost estimation works when token counts are zero', async () => {
+    const client = createMockClient();
+    const buffer = createMockBuffer();
+    const cost = new CostEstimator();
+    const tracer = new Tracer({ logger: mockLogger, costTracking: true }, client, buffer);
+
+    tracer.onTurnStart({
+      agentId: 'test-agent',
+      agentName: 'Test Agent',
+      input: 'Hello'
+    }, null, null);
+
+    await tracer.onTurnEnd({
+      agentId: 'test-agent',
+      output: 'Response here',
+      model: 'anthropic/claude-sonnet-4-6',
+      inputTokens: 0,
+      outputTokens: 0
+    }, cost, null);
+
+    const generation = createMockClient.lastIngested.find((event) => event.type === 'generation-create');
+    assert.strictEqual(generation.body.usage.inputCost, 0);
+    assert.strictEqual(generation.body.usage.outputCost, 0);
+    assert.strictEqual(generation.body.usage.totalCost, 0);
+  });
+
   test('captureInput disabled prevents input capture', async () => {
     const client = createMockClient();
     const buffer = createMockBuffer();
@@ -363,5 +425,17 @@ describe('Tracer', () => {
     const generation = events.find(e => e.type === 'generation-create');
 
     assert.strictEqual(generation.body.output, null);
+  });
+
+  test('cleanupStaleTurns removes expired active turns', () => {
+    const client = createMockClient();
+    const buffer = createMockBuffer();
+    const tracer = new Tracer({ logger: mockLogger }, client, buffer);
+
+    tracer.onTurnStart({ agentId: 'test-agent', input: 'test' }, null, null);
+    tracer.activeTurns.get('test-agent').startTime = new Date(Date.now() - 10_000).toISOString();
+    tracer.cleanupStaleTurns(1000);
+
+    assert.strictEqual(tracer.activeTurns.has('test-agent'), false);
   });
 });

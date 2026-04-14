@@ -1,0 +1,9 @@
+require('./agent-linker.test.js');
+require('./buffer.test.js');
+require('./cost-estimator.test.js');
+require('./install.test.js');
+require('./langfuse-client.test.js');
+require('./plugin.test.js');
+require('./security-monitor.test.js');
+require('./tracer.test.js');
+require('./ui-server.test.js');

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>clawtrace UI</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">clawtrace ui</p>
+          <h1>Local observability companion</h1>
+          <p class="lede">
+            A minimal dashboard for runtime configuration, retry buffer health, and recent buffered traces.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="refreshButton" class="button button-primary" type="button">Refresh</button>
+          <button id="clearBufferButton" class="button" type="button">Clear Buffer</button>
+        </div>
+      </header>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Package</h2>
+          <dl id="packageSummary" class="facts"></dl>
+        </article>
+        <article class="card">
+          <h2>Langfuse</h2>
+          <dl id="langfuseSummary" class="facts"></dl>
+        </article>
+        <article class="card">
+          <h2>Buffer</h2>
+          <dl id="bufferSummary" class="facts"></dl>
+        </article>
+        <article class="card">
+          <h2>Limits</h2>
+          <dl id="limitsSummary" class="facts"></dl>
+        </article>
+      </section>
+
+      <section class="grid grid-secondary">
+        <article class="card">
+          <h2>Capture Flags</h2>
+          <ul id="captureFlags" class="pill-list"></ul>
+        </article>
+        <article class="card">
+          <h2>Host</h2>
+          <dl id="hostSummary" class="facts"></dl>
+        </article>
+      </section>
+
+      <section class="card">
+        <div class="section-header">
+          <div>
+            <h2>Recent Buffered Batches</h2>
+            <p id="batchMeta" class="muted">Loading buffer state...</p>
+          </div>
+          <p id="statusText" class="status">Idle</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Trace</th>
+                <th>Events</th>
+                <th>Attempts</th>
+                <th>Status</th>
+                <th>Last Buffered</th>
+                <th>Next Retry</th>
+              </tr>
+            </thead>
+            <tbody id="batchTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
