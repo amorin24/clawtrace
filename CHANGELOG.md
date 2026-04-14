@@ -5,6 +5,44 @@ All notable changes to clawtrace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-04-14
+
+### Added
+
+- Added a minimal local UI companion via `npx clawtrace ui`
+- Added a zero-dependency dashboard server for local runtime inspection
+- Added static UI assets for buffer health, effective config, and recent retry batches
+- Added a structured `docs/` tree covering installation, UI usage, CLI reference, configuration, architecture, operations, and testing
+- Added integration tests for the plugin entrypoint, installer, and UI server
+
+### Changed
+
+- Unified the runtime around the real plugin entrypoint and shared tracing modules
+- Reworked same-channel pending-turn correlation to queue requests instead of overwriting them
+- Made the plugin entrypoint locally runnable from the repo as well as the deployed extension layout
+- Replaced shell-dependent validation commands with cross-platform Node-based scripts
+- Updated README and SECURITY documentation to match the actual shipped runtime
+
+### Fixed
+
+- Fixed local/plugin packaging drift between `plugin/index.js` and the copied `lib/` directory
+- Fixed Windows-incompatible lint/test script behavior caused by shell glob assumptions
+- Fixed retry buffering behavior to distinguish retryable and non-retryable ingestion failures
+- Fixed SDK version reporting so Langfuse payload metadata follows the package/plugin version
+- Fixed cost-estimation flow so zero-token turns are handled correctly
+
+### Release Notes
+
+`1.1.0` is the first operator-focused refinement release after the Telegram compatibility fixes in `1.0.2`.
+
+Highlights:
+
+- local UI companion for quick diagnostics
+- stronger packaging and repo-local testability
+- more robust retry and buffering behavior
+- broader documentation for deployment and operations
+- deeper test coverage around the real runtime path
+
 ## [1.0.2] - 2026-03-21
 
 ### Fixed
@@ -177,3 +215,4 @@ When upgrading from pre-release versions:
 [1.0.2]: https://github.com/amorin24/clawtrace/releases/tag/v1.0.2
 [1.0.1]: https://github.com/amorin24/clawtrace/releases/tag/v1.0.1
 [1.0.0]: https://github.com/amorin24/clawtrace/releases/tag/v1.0.0
+[1.1.0]: https://github.com/amorin24/clawtrace/releases/tag/v1.1.0
